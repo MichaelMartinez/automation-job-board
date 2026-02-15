@@ -41,6 +41,13 @@ fi
 
 info "All prerequisites found."
 
+# ── Linux: suggest host networking override ──────────────────────────
+if [[ "$(uname)" == "Linux" ]] && [ ! -f "docker-compose.override.yml" ]; then
+  warn "Linux detected. Docker bridge networking may not work on newer kernels."
+  warn "Creating docker-compose.override.yml from docker-compose.linux.yml..."
+  cp docker-compose.linux.yml docker-compose.override.yml
+fi
+
 # ── Start Docker containers ──────────────────────────────────────────
 info "Starting Docker containers..."
 $DOCKER_COMPOSE up -d
@@ -70,6 +77,18 @@ source backend/.venv/bin/activate
 
 info "Installing backend dependencies..."
 pip install -e "backend/.[dev]" --quiet
+
+# Verify critical auth packages are importable
+info "Verifying auth dependencies..."
+missing_pkgs=()
+python3 -c "from jose import jwt" 2>/dev/null       || missing_pkgs+=("python-jose[cryptography]")
+python3 -c "from passlib.context import CryptContext" 2>/dev/null || missing_pkgs+=("passlib[bcrypt]")
+python3 -c "import multipart" 2>/dev/null            || missing_pkgs+=("python-multipart")
+
+if [ ${#missing_pkgs[@]} -ne 0 ]; then
+  warn "Some auth packages failed to install. Retrying: ${missing_pkgs[*]}"
+  pip install "${missing_pkgs[@]}" --quiet
+fi
 
 # ── Environment file ─────────────────────────────────────────────────
 if [ ! -f "backend/.env" ]; then

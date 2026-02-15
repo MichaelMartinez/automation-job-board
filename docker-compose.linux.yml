@@ -1,0 +1,11 @@
+# Linux override: uses host networking to bypass Docker proxy issues
+# on newer kernels (6.x+ with nftables).
+#
+# Usage: cp docker-compose.linux.yml docker-compose.override.yml
+#
+# Docker Compose automatically merges docker-compose.override.yml
+# on top of docker-compose.yml — no extra flags needed.
+services:
+  db:
+    network_mode: host
+    ports: !reset []

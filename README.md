@@ -26,48 +26,26 @@ Make sure you have the following installed before starting:
 
 ## Quick Start
 
-### 1. Clone the Repository
+### 1. Clone and Set Up
 
 ```bash
 git clone <repo-url>
 cd automation-job-board
+./setup.sh
 ```
 
-### 2. Start the Database
+`setup.sh` handles everything automatically:
+- Checks prerequisites (Docker, Python, Node, npm)
+- Starts Docker containers (PostgreSQL + pgAdmin)
+- Creates a Python virtual environment and installs backend deps
+- Verifies auth packages (`python-jose`, `passlib`, `python-multipart`)
+- Copies `.env.example` → `.env` if needed
+- Runs database migrations
+- Installs frontend deps
 
-```bash
-docker compose up -d
-```
+> **Linux users:** `setup.sh` auto-detects Linux and creates a `docker-compose.override.yml` that uses host networking. This avoids Docker bridge/nftables issues on newer kernels (6.x+). The override is gitignored so it won't affect teammates.
 
-This starts:
-- **PostgreSQL** on `localhost:5432` (user: `aitb`, password: `aitb_dev_password`, database: `aitb_jobboard`)
-- **pgAdmin** at http://localhost:5050 (login: `admin@local.dev` / `admin`)
-
-> The Postgres container uses `network_mode: host`, so it binds directly to port 5432. Make sure nothing else is using that port.
-
-Wait for the database to be ready:
-
-```bash
-docker compose exec db pg_isready -U aitb -d aitb_jobboard
-```
-
-### 3. Set Up the Backend
-
-```bash
-cd backend
-
-# Create a Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies (including dev tools like pytest and ruff)
-pip install -e ".[dev]"
-
-# Create your environment file from the template
-cp .env.example .env
-```
-
-Edit `backend/.env` and configure:
+After setup, edit `backend/.env` with your keys:
 
 ```ini
 # Required — get a key at https://openrouter.ai/keys
@@ -77,43 +55,52 @@ OPENROUTER_API_KEY=your-openrouter-api-key-here
 JWT_SECRET_KEY=change-this-to-a-secure-random-string
 ```
 
-The rest of the defaults (database URL, JWT algorithm, token expiry, debug mode) work out of the box with the Docker Compose setup.
-
-Run database migrations and start the server:
+### 2. Start Development Servers
 
 ```bash
-# Apply database migrations
-alembic upgrade head
-
-# Start the API server (auto-reloads on code changes)
-uvicorn app.main:app --reload
+./start.sh
 ```
 
-The API will be available at http://localhost:8000. Interactive Swagger docs at http://localhost:8000/docs.
+This starts Docker, runs pending migrations, and launches:
+- **Backend (uvicorn):** http://localhost:8000 (Swagger docs at `/docs`)
+- **Frontend (Vite):** http://localhost:5173
+- **pgAdmin:** http://localhost:5050 (login: `admin@local.dev` / `admin`)
 
-### 4. Set Up the Frontend
+Press **Ctrl+C** to stop both servers cleanly.
 
-Open a **new terminal** (keep the backend running):
+### 3. Stop Everything
 
 ```bash
+./stop.sh
+```
+
+Kills backend/frontend processes and stops Docker containers.
+
+### Manual Setup (without scripts)
+
+<details>
+<summary>Click to expand manual steps</summary>
+
+```bash
+# Start the database
+docker compose up -d
+
+# Set up backend
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # then edit with your keys
+alembic upgrade head
+uvicorn app.main:app --reload
+
+# In a new terminal — set up frontend
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the dev server
 npm run dev
 ```
 
-The frontend will be available at http://localhost:5173.
-
-The frontend reads `VITE_API_URL` from the environment (defaults to `/api` if not set). For local development with the backend on port 8000, you can create a `frontend/.env` file:
-
-```ini
-VITE_API_URL=http://localhost:8000/api
-```
-
-Or you can configure a Vite proxy — the default `/api` fallback works if you set one up.
+</details>
 
 ## Environment Variables
 
@@ -138,7 +125,11 @@ Frontend:
 
 ```
 automation-job-board/
-├── docker-compose.yml       # Postgres + pgAdmin
+├── setup.sh                 # First-time setup script
+├── start.sh                 # Start dev servers (Ctrl+C to stop)
+├── stop.sh                  # Stop everything
+├── docker-compose.yml       # Postgres + pgAdmin (bridge networking, works on macOS)
+├── docker-compose.linux.yml # Linux override template (host networking)
 ├── .env.example             # Root env template (reference)
 │
 ├── backend/
@@ -224,6 +215,14 @@ Something else is using the PostgreSQL port. Stop any local PostgreSQL service:
 sudo systemctl stop postgresql  # Linux
 brew services stop postgresql   # macOS
 ```
+
+### Database connection hangs (Linux)
+Docker's bridge networking can fail on Linux kernels 6.x+ with nftables. The fix is host networking:
+```bash
+cp docker-compose.linux.yml docker-compose.override.yml
+docker compose down && docker compose up -d
+```
+`setup.sh` does this automatically on Linux.
 
 ### `alembic upgrade head` fails with connection error
 Make sure the Docker database is running and healthy:
